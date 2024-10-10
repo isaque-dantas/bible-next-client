@@ -12,10 +12,12 @@ export default function Page() {
     function updateSelection(versionName: string, bookName: string, chapterNumber: number) {
         fetch("https://www.abibliadigital.com.br/api/versions")
             .then(res => res.json())
-            .then((versions: Version[]) => {
-                const versionToSelect = versions.filter(version => version.version === versionName)[0]
-                setSelectedVersion(versionToSelect)
-            })
+            .then(
+                (versions: Version[]) => {
+                    const versionToSelect = versions.filter(version => version.version === versionName)[0]
+                    setSelectedVersion(versionToSelect)
+                }
+            )
 
         fetch("https://www.abibliadigital.com.br/api/books")
             .then(res => res.json())
