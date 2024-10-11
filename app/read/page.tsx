@@ -2,98 +2,173 @@
 
 import BibleContent from "@/app/read/bible-content";
 import {Chapter, CompleteBook, Version} from "@/app/read/interfaces";
-import {useState} from "react";
+import {useState, useTransition} from "react";
 
 const authHeader = {headers: {"Authorization": `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdHIiOiJGcmkgT2N0IDExIDIwMjQgMDI6MzI6NTggR01UKzAwMDAudmljaXNhcXVlNDEzQGdtYWlsLmNvbSIsImlhdCI6MTcyODYxMzk3OH0.G6CQF017thUiDKDb327R3ckcMmlFSBiHgfqIFsTtlYI`}}
 
+interface ReadingData {
+    versions: Version[],
+    versionToSelect: Version,
+    books: CompleteBook[],
+    bookToSelect: CompleteBook,
+    chapterToSelect: Chapter
+}
+
 export default function Page() {
     const [availableVersions, setAvailableVersions] = useState<Version[]>()
-    const [selectedVersion, setSelectedVersion] = useState<Version>()
     const [availableBooks, setAvailableBooks] = useState<CompleteBook[]>()
+
+    const [selectedVersion, setSelectedVersion] = useState<Version>()
     const [selectedBook, setSelectedBook] = useState<CompleteBook>()
     const [selectedChapter, setSelectedChapter] = useState<Chapter>()
+
     const [finishedFirstUpdate, setFinishedFirstUpdate] = useState(false)
 
-    async function updateSelection(versionName: string, bookAbbreviation: string, chapterNumber: number) {
-        console.log("requests xD")
+    const [prevReadingData, setPrevReadingData] = useState<ReadingData>()
+    const [nextReadingData, setNextReadingData] = useState<ReadingData>()
 
-        let res = await fetch("https://www.abibliadigital.com.br/api/versions", authHeader)
-        const versions: Version[] = await res.json()
+    const [isPending, startTransition] = useTransition()
 
-        setAvailableVersions(versions)
-        const versionToSelect = versions.filter(version => version.version === versionName)[0]
-        setSelectedVersion(versionToSelect)
+    async function requestSelected(versionName: string, bookAbbreviation: string, chapterNumber: number) {
+        let res!: Response;
 
-        res = await fetch("https://www.abibliadigital.com.br/api/books", authHeader)
-        const books: CompleteBook[] = await res.json()
+        let versions!: Version[];
+        if (!availableVersions) {
+            res = await fetch("https://www.abibliadigital.com.br/api/versions", authHeader)
+            versions = await res.json()
+        } else {
+            versions = availableVersions
+        }
 
-        setAvailableBooks(books)
-        const bookToSelect = books.filter(book => book.abbrev.en === bookAbbreviation)[0]
-        setSelectedBook(bookToSelect)
+        const versionToSelect: Version = versions.filter(version => version.version === versionName)[0]
+
+        let books!: CompleteBook[];
+        if (!availableBooks) {
+            res = await fetch("https://www.abibliadigital.com.br/api/books", authHeader)
+            books = await res.json()
+        } else {
+            books = availableBooks
+        }
+
+        const bookToSelect: CompleteBook = books.filter(book => book.abbrev.en === bookAbbreviation)[0]
 
         res = await fetch(`https://www.abibliadigital.com.br/api/verses/${versionName}/${bookAbbreviation}/${chapterNumber}`, authHeader)
-        const chapter: Chapter = await res.json()
-        setSelectedChapter(chapter)
+        const chapterToSelect: Chapter = await res.json()
+
+        return {
+            versions: versions,
+            books: books,
+            versionToSelect: versionToSelect,
+            bookToSelect: bookToSelect,
+            chapterToSelect: chapterToSelect
+        }
+    }
+
+    async function updateSelection(data: ReadingData) {
+        console.log(data)
+
+        setAvailableVersions(data.versions)
+        setSelectedVersion(data.versionToSelect)
+        setAvailableBooks(data.books)
+        setSelectedBook(data.bookToSelect)
+        setSelectedChapter(data.chapterToSelect)
 
         setFinishedFirstUpdate(true)
     }
 
     if (!finishedFirstUpdate) {
-        updateSelection("nvi", "jo", 1)
+        const data = requestSelected("nvi", "jo", 1)
+        data.then((data) => updateSelection(data))
     }
 
-    function onChangeSelection(selection: { changed: string, value: any }) {
-        console.log(selection)
-        if (selection.changed === "version") {
-            updateSelection(selection.value, selectedBook!.abbrev.en, selectedChapter!.chapter.number)
-        } else if (selection.changed === "book") {
-            updateSelection(selectedVersion!.version, selection.value, selectedChapter!.chapter.number)
-        } else if (selection.changed === "chapter") {
-            updateSelection(selectedVersion!.version, selectedBook!.abbrev.en, selection.value)
+    async function onChangeSelection(selection: { changed: string, value: any }) {
+        const o: { [key: string]: () => Promise<ReadingData> } = {
+            version: () => requestSelected(selection.value, selectedBook!.abbrev.en, selectedChapter!.chapter.number),
+            book: () => requestSelected(selectedVersion!.version, selection.value, selectedChapter!.chapter.number),
+            chapter: () => requestSelected(selectedVersion!.version, selectedBook!.abbrev.en, selection.value),
         }
+
+        const data = await o[selection.changed]()
+        updateSelection(data)
+    }
+
+    async function getPrevBook() {
+        const booksWithIndexes: { book: CompleteBook, index: number }[] = availableBooks!.map((book, i) => {
+            return {book: book, index: i}
+        })
+
+        const selectedBookIndex: number = booksWithIndexes.filter((data) => data.book.abbrev.en === selectedBook!.abbrev.en)[0].index
+        return selectedBookIndex > 0 ? availableBooks!.at(selectedBookIndex - 1)! : null
+    }
+
+    async function getNextBook() {
+        const booksWithIndexes: { book: CompleteBook, index: number }[] = availableBooks!.map((book, i) => {
+            return {book: book, index: i}
+        })
+
+        const selectedBookIndex: number = booksWithIndexes.filter((data) => data.book.abbrev.en === selectedBook!.abbrev.en)[0].index
+        return selectedBookIndex < availableBooks!.length ? availableBooks!.at(selectedBookIndex + 1) : null
+    }
+
+    async function getPrevReadingData() {
+        if (selectedChapter!.chapter.number === 1) {
+            const prevBook = await getPrevBook()
+            return await requestSelected(selectedVersion!.version, prevBook!.abbrev.en, prevBook!.chapters)
+        }
+
+        return await requestSelected(selectedVersion!.version, selectedBook!.abbrev.en, selectedChapter!.chapter.number - 1)
     }
 
     async function selectPrevChapter() {
-        if (selectedChapter!.chapter.number === 1) {
-            const res = await fetch("https://www.abibliadigital.com.br/api/books", authHeader)
-            const books: CompleteBook[] = await res.json()
-
-            const booksWithIndexes: { book: CompleteBook, index: number }[] = books.map((book, i) => {
-                return {book: book, index: i}
-            })
-
-            const selectedBookIndex: number =
-                booksWithIndexes.filter((data) => data.book.abbrev.en === selectedBook!.abbrev.en)[0].index
-
-            if (selectedBookIndex > 0) {
-                const prevBook = books.at(selectedBookIndex - 1)!
-                updateSelection(selectedVersion!.version, prevBook!.abbrev.en, prevBook.chapters)
-                return;
-            }
+        const currentReadingData: ReadingData = {
+            books: availableBooks!,
+            versions: availableVersions!,
+            chapterToSelect: selectedChapter!,
+            versionToSelect: selectedVersion!,
+            bookToSelect: selectedBook!
         }
 
-        updateSelection(selectedVersion!.version, selectedBook!.abbrev.en, selectedChapter!.chapter.number - 1)
+        if (prevReadingData !== undefined && prevReadingData !== null) {
+            await updateSelection(prevReadingData)
+        } else {
+            await updateSelection(await getPrevReadingData())
+        }
+
+        startTransition(() => {
+            setNextReadingData(currentReadingData)
+            getPrevReadingData()
+                .then((cachedPrevReadingData) => setPrevReadingData(cachedPrevReadingData))
+        })
+    }
+
+    async function getNextReadingData() {
+        if (selectedChapter!.chapter.number === selectedBook?.chapters) {
+            const nextBook = await getNextBook()
+            return await requestSelected(selectedVersion!.version, nextBook!.abbrev.en, 1)
+        }
+
+        return await requestSelected(selectedVersion!.version, selectedBook!.abbrev.en, selectedChapter!.chapter.number + 1)
     }
 
     async function selectNextChapter() {
-        if (selectedChapter!.chapter.number === selectedBook?.chapters) {
-            const res = await fetch("https://www.abibliadigital.com.br/api/books", authHeader)
-            const books: CompleteBook[] = await res.json()
-
-            const booksWithIndexes: { book: CompleteBook, index: number }[] = books.map((book, i) => {
-                return {book: book, index: i}
-            })
-
-            const selectedBookIndex: number =
-                booksWithIndexes.filter((data) => data.book.abbrev.en === selectedBook!.abbrev.en)[0].index
-
-            if (selectedBookIndex < books.length) {
-                updateSelection(selectedVersion!.version, books.at(selectedBookIndex + 1)!.abbrev.en, 1)
-                return;
-            }
+        const currentReadingData: ReadingData = {
+            books: availableBooks!,
+            versions: availableVersions!,
+            chapterToSelect: selectedChapter!,
+            versionToSelect: selectedVersion!,
+            bookToSelect: selectedBook!
         }
 
-        updateSelection(selectedVersion!.version, selectedBook!.abbrev.en, selectedChapter!.chapter.number + 1)
+        if (nextReadingData !== undefined && nextReadingData !== null) {
+            await updateSelection(nextReadingData)
+        } else {
+            await updateSelection(await getNextReadingData())
+        }
+        startTransition(() => {
+            setPrevReadingData(currentReadingData)
+            getNextReadingData()
+                .then((cachedNextReadingData) => setNextReadingData(cachedNextReadingData))
+        })
     }
 
     return (<div className="my-20 absolute right-1/2 translate-x-1/2">

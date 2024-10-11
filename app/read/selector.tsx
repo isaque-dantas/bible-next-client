@@ -23,8 +23,6 @@ export default function Selector({
 
     function handleChange(e: FormEvent) {
         e.preventDefault()
-        console.log(e)
-
         onChange({changed: e.target.name, value: e.target.value})
     }
 

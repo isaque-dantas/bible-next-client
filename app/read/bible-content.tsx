@@ -42,7 +42,7 @@ export default function BibleContent({
             selectedBook={selectedBook}
             selectedChapter={selectedChapter}
         />
-        <section className="mt-4 flex flex-col gap-2 max-h-[75vh] overflow-y-scroll">
+        <section className="mt-4 pe-4 flex flex-col gap-2 max-h-[75vh] overflow-y-scroll">
             {parsedContent}
         </section>
     </div>)
