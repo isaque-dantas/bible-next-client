@@ -1,8 +1,6 @@
-'use client';
-
-import {useMemo, useState} from "react";
 import Selector from "@/app/read/selector";
 import {Chapter, CompleteBook, Version} from "@/app/read/interfaces";
+import {useMemo} from "react";
 
 // <BibleContent
 //     selectedVersion={selectedVersion}
@@ -15,34 +13,37 @@ import {Chapter, CompleteBook, Version} from "@/app/read/interfaces";
 interface Props {
     selectedVersion: Version;
     selectedBook: CompleteBook;
-    versions: Version[];
-    books: CompleteBook[];
+    availableVersions: Version[];
+    availableBooks: CompleteBook[];
     selectedChapter: Chapter;
+    onChangeSelection: (selection: { changed: string, value: string | number }) => void
 }
 
-export default function BibleContent({selectedBook, selectedChapter, versions, books}: Props) {
+// @ts-ignore
+export default function BibleContent({
+                                         onChangeSelection,
+                                         selectedVersion,
+                                         selectedBook,
+                                         selectedChapter,
+                                         availableVersions,
+                                         availableBooks
+                                     }: Props) {
 
-    function updateParsedContent(changing: { value: string | number, propertyName: string }) {
-        // setSelectedChapter("");
-    }
+    const parsedContent = useMemo(() => selectedChapter.verses.map((verse, i) => <p key={i}><em
+        className="pe-2 text-cyan-600">{verse.number}</em>{verse.text}</p>), [selectedChapter])
 
-    console.log(selectedChapter)
-
-    const parsedContent = selectedChapter.verses.map(
-        (verse, i) => <p key={i}><em className="pe-2 text-cyan-600">{verse.number}</em>{verse.text}</p>
-    )
-
-    return (
-        <div className="flex flex-col">
-            <Selector
-                onChange={updateParsedContent}
-                chaptersAmount={selectedBook.chapters}
-                versions={versions}
-                books={books}
-            />
-            <section className="mt-4 flex flex-col gap-2 max-h-[75vh] overflow-y-scroll">
-                {parsedContent}
-            </section>
-        </div>
-    )
+    return (<div className="flex flex-col">
+        <Selector
+            onChange={onChangeSelection}
+            chaptersAmount={selectedBook.chapters}
+            versions={availableVersions}
+            books={availableBooks}
+            selectedVersion={selectedVersion}
+            selectedBook={selectedBook}
+            selectedChapter={selectedChapter}
+        />
+        <section className="mt-4 flex flex-col gap-2 max-h-[75vh] overflow-y-scroll">
+            {parsedContent}
+        </section>
+    </div>)
 }

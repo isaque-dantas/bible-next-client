@@ -1,22 +1,31 @@
 import {FormEvent} from "react";
 import {Chapter, CompleteBook, Version} from "@/app/read/interfaces";
-import {type} from "node:os";
 
 interface Props {
-    onChange: (changing: { value: string | number, propertyName: string }) => void,
+    onChange: (selection: { changed: string, value: string | number }) => void,
     chaptersAmount: number,
     versions: Version[],
-    books: CompleteBook[]
+    books: CompleteBook[],
+    selectedVersion: Version,
+    selectedBook: CompleteBook,
+    selectedChapter: Chapter
 }
 
-export default function Selector(
-    {onChange, chaptersAmount, versions, books}: Props) {
+export default function Selector({
+                                     onChange,
+                                     chaptersAmount,
+                                     versions,
+                                     books,
+                                     selectedVersion,
+                                     selectedBook,
+                                     selectedChapter
+                                 }: Props) {
 
     function handleChange(e: FormEvent) {
         e.preventDefault()
         console.log(e)
 
-        onChange({propertyName: e.target.name, value: e.target.value})
+        onChange({changed: e.target.name, value: e.target.value})
     }
 
     const chapterOptions = []
@@ -25,30 +34,26 @@ export default function Selector(
     }
 
     const booksOptions = books.map(
-        (book, i) => <option key={i} value={book.abbrev.en}>{book.name}</option>, books
-    )
+        (book, i) => <option key={i} value={book.abbrev.en}>{book.name}</option>, books)
 
     const versionsOptions = versions.map(
-        (version, i) => <option key={i} value={version.version}>{version.version.toUpperCase()}</option>, versions
-    )
+        (version, i) => <option key={i} value={version.version}>{version.version.toUpperCase()}</option>, versions)
 
-    return (
-        <>
-            <form onChange={handleChange}>
-                <div className="flex gap-2">
-                    <select name="chapter" id="chapter" className="ps-2 pe-6 py-2">
-                        {chapterOptions}
-                    </select>
+    return (<>
+        <form onChange={handleChange}>
+            <div className="flex gap-2">
+                <select value={selectedChapter!.chapter.number} name="chapter" id="chapter" className="ps-2 pe-6 py-2">
+                    {chapterOptions}
+                </select>
 
-                    <select name="book" id="book" className="ps-2 pe-6 py-2">
-                        {booksOptions}
-                    </select>
+                <select value={selectedBook!.abbrev.en} name="book" id="book" className="ps-2 pe-6 py-2">
+                    {booksOptions}
+                </select>
 
-                    <select name="version" id="version" className="ps-2 pe-6 py-2">
-                        {versionsOptions}
-                    </select>
-                </div>
-            </form>
-        </>
-    )
+                <select value={selectedVersion.version} name="version" id="version" className="ps-2 pe-6 py-2">
+                    {versionsOptions}
+                </select>
+            </div>
+        </form>
+    </>)
 }
