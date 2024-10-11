@@ -2,7 +2,7 @@
 
 import BibleContent from "@/app/read/bible-content";
 import {Chapter, CompleteBook, Version} from "@/app/read/interfaces";
-import {useState, useTransition} from "react";
+import {useMemo, useState, useTransition} from "react";
 
 const authHeader = {headers: {"Authorization": `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdHIiOiJGcmkgT2N0IDExIDIwMjQgMDI6MzI6NTggR01UKzAwMDAudmljaXNhcXVlNDEzQGdtYWlsLmNvbSIsImlhdCI6MTcyODYxMzk3OH0.G6CQF017thUiDKDb327R3ckcMmlFSBiHgfqIFsTtlYI`}}
 
@@ -27,7 +27,15 @@ export default function Page() {
     const [prevReadingData, setPrevReadingData] = useState<ReadingData>()
     const [nextReadingData, setNextReadingData] = useState<ReadingData>()
 
-    const [isPending, startTransition] = useTransition()
+    const currentReadingData = useMemo(() => {
+        return {
+            versions: availableVersions!,
+            books: availableBooks!,
+            versionToSelect: selectedVersion!,
+            bookToSelect: selectedBook!,
+            chapterToSelect: selectedChapter!
+        }
+    }, [availableVersions, availableBooks, selectedVersion, selectedBook, selectedChapter])
 
     async function requestSelected(versionName: string, bookAbbreviation: string, chapterNumber: number) {
         let res!: Response;
@@ -76,11 +84,6 @@ export default function Page() {
         setFinishedFirstUpdate(true)
     }
 
-    if (!finishedFirstUpdate) {
-        const data = requestSelected("nvi", "jo", 1)
-        data.then((data) => updateSelection(data))
-    }
-
     async function onChangeSelection(selection: { changed: string, value: any }) {
         const o: { [key: string]: () => Promise<ReadingData> } = {
             version: () => requestSelected(selection.value, selectedBook!.abbrev.en, selectedChapter!.chapter.number),
@@ -90,85 +93,80 @@ export default function Page() {
 
         const data = await o[selection.changed]()
         updateSelection(data)
+
+        setPrevReadingData(await getPrevReadingData(data))
+        setNextReadingData(await getNextReadingData(data))
     }
 
-    async function getPrevBook() {
+    async function getPrevBook(book: CompleteBook) {
         const booksWithIndexes: { book: CompleteBook, index: number }[] = availableBooks!.map((book, i) => {
             return {book: book, index: i}
         })
 
-        const selectedBookIndex: number = booksWithIndexes.filter((data) => data.book.abbrev.en === selectedBook!.abbrev.en)[0].index
+        const selectedBookIndex: number = booksWithIndexes.filter((data) => data.book.abbrev.en === book!.abbrev.en)[0].index
         return selectedBookIndex > 0 ? availableBooks!.at(selectedBookIndex - 1)! : null
     }
 
-    async function getNextBook() {
+    async function getPrevReadingData(data: ReadingData) {
+        if (data.chapterToSelect!.chapter.number === 1) {
+            const prevBook = await getPrevBook(data.bookToSelect)
+            return await requestSelected(data.versionToSelect!.version, prevBook!.abbrev.en, prevBook!.chapters)
+        }
+
+        return await requestSelected(data.versionToSelect!.version, data.bookToSelect!.abbrev.en, data.chapterToSelect!.chapter.number - 1)
+    }
+
+    async function selectPrevChapter() {
+        const currentReadingDataBeforeChange: ReadingData = currentReadingData
+
+        const currentReadingDataAfterChange = await getPrevReadingData(currentReadingDataBeforeChange)
+        if (prevReadingData !== undefined && prevReadingData !== null) {
+            await updateSelection(prevReadingData)
+        } else {
+            await updateSelection(currentReadingDataAfterChange)
+        }
+
+        setNextReadingData(currentReadingDataBeforeChange)
+        const cachedNextReadingData = await getPrevReadingData(currentReadingDataAfterChange)
+        setPrevReadingData(cachedNextReadingData)
+    }
+
+    async function getNextBook(book: CompleteBook) {
         const booksWithIndexes: { book: CompleteBook, index: number }[] = availableBooks!.map((book, i) => {
             return {book: book, index: i}
         })
 
-        const selectedBookIndex: number = booksWithIndexes.filter((data) => data.book.abbrev.en === selectedBook!.abbrev.en)[0].index
+        const selectedBookIndex: number = booksWithIndexes.filter((data) => data.book.abbrev.en === book!.abbrev.en)[0].index
         return selectedBookIndex < availableBooks!.length ? availableBooks!.at(selectedBookIndex + 1) : null
     }
 
-    async function getPrevReadingData() {
-        if (selectedChapter!.chapter.number === 1) {
-            const prevBook = await getPrevBook()
-            return await requestSelected(selectedVersion!.version, prevBook!.abbrev.en, prevBook!.chapters)
+    async function getNextReadingData(data: ReadingData) {
+        if (data.chapterToSelect!.chapter.number === data.bookToSelect?.chapters) {
+            const nextBook = await getNextBook(data.bookToSelect)
+            return await requestSelected(data.versionToSelect!.version, nextBook!.abbrev.en, 1)
         }
 
-        return await requestSelected(selectedVersion!.version, selectedBook!.abbrev.en, selectedChapter!.chapter.number - 1)
-    }
-
-    async function selectPrevChapter() {
-        const currentReadingData: ReadingData = {
-            books: availableBooks!,
-            versions: availableVersions!,
-            chapterToSelect: selectedChapter!,
-            versionToSelect: selectedVersion!,
-            bookToSelect: selectedBook!
-        }
-
-        if (prevReadingData !== undefined && prevReadingData !== null) {
-            await updateSelection(prevReadingData)
-        } else {
-            await updateSelection(await getPrevReadingData())
-        }
-
-        startTransition(() => {
-            setNextReadingData(currentReadingData)
-            getPrevReadingData()
-                .then((cachedPrevReadingData) => setPrevReadingData(cachedPrevReadingData))
-        })
-    }
-
-    async function getNextReadingData() {
-        if (selectedChapter!.chapter.number === selectedBook?.chapters) {
-            const nextBook = await getNextBook()
-            return await requestSelected(selectedVersion!.version, nextBook!.abbrev.en, 1)
-        }
-
-        return await requestSelected(selectedVersion!.version, selectedBook!.abbrev.en, selectedChapter!.chapter.number + 1)
+        return await requestSelected(data.versionToSelect!.version, data.bookToSelect!.abbrev.en, data.chapterToSelect!.chapter.number + 1)
     }
 
     async function selectNextChapter() {
-        const currentReadingData: ReadingData = {
-            books: availableBooks!,
-            versions: availableVersions!,
-            chapterToSelect: selectedChapter!,
-            versionToSelect: selectedVersion!,
-            bookToSelect: selectedBook!
-        }
+        const readingDataBeforeChange: ReadingData = currentReadingData
 
+        const currentReadingDataAfterChange = await getNextReadingData(readingDataBeforeChange)
         if (nextReadingData !== undefined && nextReadingData !== null) {
             await updateSelection(nextReadingData)
         } else {
-            await updateSelection(await getNextReadingData())
+            await updateSelection(currentReadingDataAfterChange)
         }
-        startTransition(() => {
-            setPrevReadingData(currentReadingData)
-            getNextReadingData()
-                .then((cachedNextReadingData) => setNextReadingData(cachedNextReadingData))
-        })
+
+        setPrevReadingData(readingDataBeforeChange)
+        const cachedNextReadingData = await getNextReadingData(currentReadingDataAfterChange)
+        setNextReadingData(cachedNextReadingData)
+    }
+
+    if (!finishedFirstUpdate) {
+        const data = requestSelected("nvi", "jo", 1)
+        data.then((data) => updateSelection(data))
     }
 
     return (<div className="my-20 absolute right-1/2 translate-x-1/2">
